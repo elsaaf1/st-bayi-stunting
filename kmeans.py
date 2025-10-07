@@ -36,15 +36,6 @@ def is_numeric_series(s):
     return pd.api.types.is_numeric_dtype(s)
 
 
-def get_default_features(df):
-    if df is None:
-        return []
-    candidates = [
-        "Overweight","Stunting","Normal"
-    ]
-    return [c for c in candidates if c in df.columns and is_numeric_series(df[c])]
-
-
 def to_excel_bytes(df_dict):
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
@@ -84,6 +75,7 @@ def show():
         st.info("Unggah data untuk mulai analisis.")
         st.stop()
 
+    # kolom id kandidat (non-numeric)
     id_cols = [c for c in df.columns if not is_numeric_series(df[c])]
     suggest_id = None
     for c in ["Puskesmas","PUSKESMAS","Nama Puskesmas","Puskesmas Name","Kode"]:
@@ -92,9 +84,25 @@ def show():
             break
 
     with st.expander("⚙️ Pilih fitur & pengaturan", expanded=True):
-        numeric_cols = [c for c in df.columns if is_numeric_series(df[c])]
-        default_feats = get_default_features(df) or numeric_cols[: min(6, len(numeric_cols))]
-        features = st.multiselect("Pilih fitur numerik untuk clustering", options=numeric_cols, default=default_feats)
+        # hanya izinkan kolom berikut
+        allowed = ["Berat", "Tinggi", "BMI", "Overweight", "Stunting", "Normal"]
+        allowed_numeric = [c for c in allowed if c in df.columns and is_numeric_series(df[c])]
+
+        if not allowed_numeric:
+            st.error("File tidak memiliki kolom numerik dari daftar: Berat, Tinggi, BMI, Overweight, Stunting, atau Normal.")
+            st.stop()
+
+        # Multiselect hanya menampilkan kolom yang diizinkan
+        features = st.multiselect(
+            "Pilih fitur numerik untuk clustering",
+            options=allowed_numeric,
+            default=allowed_numeric  # default pilih semua yang ada
+        )
+
+        if not features:
+            st.error("Pilih minimal satu fitur dari: Berat, Tinggi, BMI, Overweight, Stunting, Normal.")
+            st.stop()
+
         id_col = st.selectbox("Kolom identitas (opsional)", options=[None] + id_cols,
                               index=(0 if suggest_id is None else ([None] + id_cols).index(suggest_id)))
         scale = st.checkbox("Standarisasi fitur (StandardScaler)", value=True)
@@ -104,11 +112,7 @@ def show():
 
         work = df.copy()
         work = work.replace([np.inf, -np.inf], np.nan)
-        if features:
-            sel = work[features].astype(float).fillna(0.0)
-        else:
-            st.error("Pilih minimal satu fitur numerik.")
-            st.stop()
+        sel = work[features].astype(float).fillna(0.0)
 
     X = sel.values
     if scale:
@@ -134,7 +138,6 @@ def show():
 
     # Elbow plot (WCSS)
     st.subheader("🔍 Diagram Elbow (Within-Cluster Sum of Squares)")
-    # compute WCSS (inertia) for k=1..10 (or up to len(X))
     k_max_elbow = min(10, len(X))
     k_range_elbow = list(range(1, k_max_elbow + 1))
     wcss = []
@@ -152,14 +155,12 @@ def show():
     plt.ylabel('WCSS (inertia)')
     plt.title('Elbow Plot: WCSS vs k')
     plt.grid(True)
-    # mark chosen k if within range
     if k in k_range_elbow:
         idx_el = k_range_elbow.index(k)
         plt.scatter([k], [wcss[idx_el]], s=120, facecolors='none', edgecolors='black', linewidths=2, label=f"Chosen k = {k}")
         plt.legend()
     st.pyplot(fig_elbow, use_container_width=True)
 
-    # Show silhouette plot
     # Davies-Bouldin index plot
     st.subheader("📈 Davies-Bouldin Index untuk k = 2..10")
     k_range_db = [k for k,_ in sils]
@@ -195,7 +196,6 @@ def show():
     plt.ylabel("Silhouette score")
     plt.title("Silhouette Score per k")
     plt.grid(True)
-    # highlight chosen k
     if k in ks:
         idx = ks.index(k)
         plt.scatter([ks[idx]], [scores[idx]], s=120, facecolors='none', edgecolors='black', linewidths=2, label=f"Chosen k = {k}")
@@ -228,7 +228,6 @@ def show():
     summary = out.groupby("Cluster")[features].mean().reset_index()
     st.dataframe(summary, use_container_width=True)
 
-    # PCA visualization
     st.subheader("📈 Visualisasi 2D dengan PCA")
     fig = plt.figure(figsize=(6,4))
     unique_labels = np.unique(labels)
@@ -241,7 +240,6 @@ def show():
     plt.grid(True)
     st.pyplot(fig, use_container_width=True)
 
-    # Download
     st.subheader("💾 Unduh Hasil")
     excel_bytes = to_excel_bytes({
         "Clustered_Data": out,
