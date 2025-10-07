@@ -21,6 +21,13 @@ def read_data(uploaded):
         df = pd.read_csv(uploaded)
     else:
         df = pd.read_excel(uploaded)
+    # Format kolom tanggal lahir agar tidak menampilkan waktu (opsional)
+    for col in df.columns:
+        if "tgl" in col.lower() and "lahir" in col.lower():
+            try:
+                df[col] = pd.to_datetime(df[col]).dt.date
+            except Exception:
+                pass
     return df
 
 def prepare_scaled_matrix(df, feature_cols):
