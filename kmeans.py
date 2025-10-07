@@ -209,7 +209,7 @@ def show():
 
     # Preview hasil
     st.subheader("📝 Data Hasil")
-    st.dataframe(df_work.head(50), use_container_width=True)
+    st.dataframe(df_work, use_container_width=True)
 
         # -----------------------
     # Unduh hasil
