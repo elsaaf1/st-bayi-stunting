@@ -1,233 +1,243 @@
-# agglomerative_page.py
+# agglomerative.py
 import io
-import numpy as np
-import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
+import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import AgglomerativeClustering
-from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, davies_bouldin_score
+import plotly.express as px
+import numpy as np
 
-@st.cache_data(show_spinner=False)
-def read_file(file, sheet_name=None):
-    if file is None:
-        return None, None
-    name = getattr(file, "name", "").lower()
-    try:
-        if name.endswith(".csv"):
-            df = pd.read_csv(file)
-            return df, None
-        else:
-            xls = pd.ExcelFile(file)
-            sheets = xls.sheet_names
-            if sheet_name is None:
-                preferred = [s for s in sheets if "entry" in s.lower() or "data" in s.lower()]
-                sheet = preferred[0] if preferred else sheets[0]
-            else:
-                sheet = sheet_name
-            df = pd.read_excel(xls, sheet_name=sheet)
-            return df, sheets
-    except Exception as e:
-        st.error(f"Gagal membaca file: {e}")
-        return None, None
 
-def is_numeric_series(s):
-    return pd.api.types.is_numeric_dtype(s)
+# -----------------------
+# Helper functions
+# -----------------------
+@st.cache_data
+def read_data(uploaded):
+    """Membaca file CSV atau Excel dan membersihkan kolom tanggal lahir agar tidak tampil waktu."""
+    if uploaded is None:
+        return None
+    name = uploaded.name.lower()
+    if name.endswith(".csv"):
+        df = pd.read_csv(uploaded)
+    else:
+        df = pd.read_excel(uploaded)
 
-def to_excel_bytes(df_dict):
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        for name, df in df_dict.items():
-            df.to_excel(writer, index=False, sheet_name=name[:31])
-    buf.seek(0)
-    return buf
+    # Format kolom tanggal lahir
+    for col in df.columns:
+        if "tgl" in col.lower() and "lahir" in col.lower():
+            try:
+                df[col] = pd.to_datetime(df[col]).dt.date
+            except Exception:
+                pass
+    return df
 
-def compute_silhouette_scores_agglomerative(X, linkage="ward", k_max=10):
-    """
-    Compute silhouette scores for AgglomerativeClustering for k=2..k_max (or up to len(X)).
-    Returns list of (k, score).
-    """
-    scores = []
-    k_upper = min(k_max, len(X))
-    for k in range(2, k_upper + 1):
+
+def fixed_mapping(clusters):
+    """Pemetaan fixed cluster → label."""
+    mapping = {0: "Stunting", 1: "Normal", 2: "Overweight"}
+    return [mapping.get(c, f"Lainnya_{c}") for c in clusters]
+
+
+def compute_scores_over_k(X_scaled, linkage_type="ward", k_min=2, k_max=10):
+    """Hitung silhouette dan davies-bouldin untuk berbagai k."""
+    ks, silhouettes, davies = [], [], []
+    for k in range(k_min, k_max + 1):
         try:
-            model = AgglomerativeClustering(n_clusters=k, linkage=linkage)
-            labels = model.fit_predict(X)
-            sc = silhouette_score(X, labels)
+            model = AgglomerativeClustering(n_clusters=k, linkage=linkage_type)
+            labels = model.fit_predict(X_scaled)
+            if len(np.unique(labels)) > 1:
+                sil = silhouette_score(X_scaled, labels)
+                db = davies_bouldin_score(X_scaled, labels)
+            else:
+                sil, db = np.nan, np.nan
         except Exception:
-            sc = np.nan
-        scores.append((k, sc))
-    return scores
+            sil, db = np.nan, np.nan
+        ks.append(k)
+        silhouettes.append(sil)
+        davies.append(db)
+    return ks, silhouettes, davies
 
+
+# -----------------------
+# Streamlit Page
+# -----------------------
 def show():
-    st.title("🔗 Agglomerative Clustering")
-    st.caption("Agglomerative clustering untuk data stunting/gizi — pilih fitur terbatas, linkage, tentukan k (atau biarkan auto), dan unduh hasil.")
+    st.title("Metode Agglomerative — Analisa BMI / Berat / Tinggi")
+    st.markdown("""
+    Gunakan **Agglomerative Hierarchical Clustering** untuk mengelompokkan data anak berdasarkan kolom:
+    **BMI**, **Berat**, dan **Tinggi**.
+    """)
 
-    with st.expander("📥 Upload Data", expanded=True):
-        file = st.file_uploader("Unggah berkas (.csv / .xlsx)", type=["csv","xlsx"], accept_multiple_files=False)
-        sheet_name = None
-        df, sheets = read_file(file, sheet_name)
-        if file is not None and sheets:
-            sheet_name = st.selectbox("Pilih sheet Excel", options=sheets, index=0)
-            df, _ = read_file(file, sheet_name)
+    uploaded = st.file_uploader("📂 Unggah file data (Excel/CSV)", type=["xlsx", "xls", "csv"])
+    if uploaded is None:
+        st.info("Silakan unggah file untuk memulai analisis.")
+        return
 
-    if df is None:
-        st.info("Unggah data untuk mulai analisis.")
-        st.stop()
+    df = read_data(uploaded)
+    st.subheader("Preview Data")
+    st.dataframe(df.head(15), use_container_width=True)
 
-    # kandidat kolom ID (non-numeric)
-    id_cols = [c for c in df.columns if not is_numeric_series(df[c])]
-    suggest_id = None
-    for c in ["Puskesmas","PUSKESMAS","Nama Puskesmas","Puskesmas Name","Kode"]:
-        if c in id_cols:
-            suggest_id = c
-            break
+    # Pengaturan Agglomerative di bawah Preview Data
+    st.subheader("⚙️ Pengaturan Agglomerative")
+    linkage_type = st.selectbox(
+        "Pilih jenis linkage",
+        ["ward", "average", "complete", "single"],
+        help=(
+            "- **ward**: minimalkan varian dalam cluster (paling umum, hanya untuk data numerik)\n"
+            "- **average**: jarak rata-rata antar semua titik di dua cluster\n"
+            "- **complete**: jarak maksimum antar titik di dua cluster\n"
+            "- **single**: jarak minimum antar titik di dua cluster (cenderung menghasilkan chaining)"
+        )
+    )
 
-    with st.expander("⚙️ Pilih fitur & pengaturan", expanded=True):
-        allowed = ["Berat", "Tinggi", "BMI", "Overweight", "Stunting", "Normal"]
-        allowed_numeric = [c for c in allowed if c in df.columns and is_numeric_series(df[c])]
+    # Deteksi otomatis kolom fitur
+    expected_cols = ["Berat", "Tinggi", "BMI"]
+    feature_cols = [col for col in expected_cols if col in df.columns]
+    if len(feature_cols) < 2:
+        st.error("❌ Kolom yang dibutuhkan tidak lengkap. Pastikan ada kolom 'Berat', 'Tinggi', dan 'BMI'.")
+        return
 
-        if not allowed_numeric:
-            st.error("File tidak memiliki kolom numerik dari daftar: Berat, Tinggi, BMI, Overweight, Stunting, atau Normal.")
-            st.stop()
+    # Bersihkan data
+    df_work = df.dropna(subset=feature_cols).copy()
+    if df_work.empty:
+        st.error("Tidak ada data valid setelah pembersihan NA.")
+        return
 
-        features = st.multiselect(
-            "Pilih fitur numerik untuk clustering",
-            options=allowed_numeric,
-            default=allowed_numeric
+    # Scaling
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(df_work[feature_cols])
+
+    # -----------------------
+    # Evaluasi berbagai k
+    # -----------------------
+    st.subheader(f"🔎 Evaluasi Cluster untuk Berbagai Nilai k — Linkage: **{linkage_type}**")
+    k_max = 10 if len(df_work) >= 10 else max(3, len(df_work) - 1)
+    ks, silhouettes, davies = compute_scores_over_k(X_scaled, linkage_type=linkage_type, k_min=2, k_max=k_max)
+
+    # Plot Silhouette
+    fig_sil = px.line(
+        x=ks, y=silhouettes, markers=True,
+        title=f"Silhouette Score per k (lebih tinggi lebih baik) — Linkage: {linkage_type}"
+    )
+    fig_sil.update_xaxes(title="Jumlah Cluster (k)")
+    fig_sil.update_yaxes(title="Silhouette Score")
+    st.plotly_chart(fig_sil, use_container_width=True)
+
+    # Plot Davies–Bouldin
+    fig_db = px.line(
+        x=ks, y=davies, markers=True,
+        title=f"Davies–Bouldin Index per k (lebih rendah lebih baik) — Linkage: {linkage_type}"
+    )
+    fig_db.update_xaxes(title="Jumlah Cluster (k)")
+    fig_db.update_yaxes(title="Davies–Bouldin Index")
+    st.plotly_chart(fig_db, use_container_width=True)
+
+    # -----------------------
+    # Jalankan Agglomerative (k=3 fixed)
+    # -----------------------
+    st.subheader("📊 Hasil Clustering")
+    fixed_k = 3
+    try:
+        model = AgglomerativeClustering(n_clusters=fixed_k, linkage=linkage_type)
+        labels = model.fit_predict(X_scaled)
+        df_work["Cluster"] = labels
+        df_work["Label"] = fixed_mapping(labels)
+    except Exception as e:
+        st.error(f"Gagal menjalankan AgglomerativeClustering: {e}")
+        return
+
+    # Hitung metrik untuk k=3
+    sil_3, db_3 = None, None
+    try:
+        if len(np.unique(labels)) > 1:
+            sil_3 = silhouette_score(X_scaled, labels)
+            db_3 = davies_bouldin_score(X_scaled, labels)
+    except Exception:
+        pass
+
+    # Ringkasan hasil
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Jumlah data", len(df_work))
+    with col2:
+        st.metric("Silhouette", f"{sil_3:.3f}" if sil_3 is not None else "—")
+    with col3:
+        st.metric("Davies–Bouldin", f"{db_3:.3f}" if db_3 is not None else "—")
+
+    # Statistik per Label
+    st.subheader("📋 Statistik per Label")
+    agg = df_work.groupby("Label")[feature_cols].mean().round(2)
+    agg["Jumlah Anak"] = df_work.groupby("Label").size()
+    st.dataframe(agg.reset_index(), use_container_width=True)
+
+    # -----------------------
+    # Visualisasi hasil
+    # -----------------------
+    st.subheader("🗺️ Visualisasi Clustering")
+    x_axis = "BMI"
+    y_axis = "Tinggi" if "Tinggi" in df_work.columns else feature_cols[0]
+    fig = px.scatter(
+        df_work, x=x_axis, y=y_axis, color="Label", hover_data=df_work.columns,
+        title=f"Agglomerative Clustering — Linkage: {linkage_type}"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # -----------------------
+    # Unduh hasil
+    # -----------------------
+    st.subheader("⬇️ Unduh Hasil Analisa Agglomerative")
+
+    # CSS agar tombol rata tengah
+    st.markdown("""
+        <style>
+        div.download-buttons {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;  /* jarak antar tombol */
+            margin-top: 10px;
+            margin-bottom: 20px;
+        }
+        div.download-buttons > div {
+            flex: 0 0 auto;  /* tombol tidak melar */
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Siapkan buffer CSV & Excel
+    csv_buf = io.StringIO()
+    df_work.to_csv(csv_buf, index=False)
+
+    xls_buf = io.BytesIO()
+    with pd.ExcelWriter(xls_buf, engine="xlsxwriter") as writer:
+        df_work.to_excel(writer, index=False, sheet_name="Hasil")
+        metrics_df = pd.DataFrame({
+            "k": ks,
+            "silhouette": silhouettes,
+            "davies_bouldin": davies
+        })
+        metrics_df.to_excel(writer, index=False, sheet_name="Metrics_over_k")
+
+    # Tampilkan tombol rata tengah dan sejajar
+    st.markdown('<div class="download-buttons">', unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            "📄 Unduh Hasil CSV",
+            data=csv_buf.getvalue(),
+            file_name=f"hasil_agglomerative_{linkage_type}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    with col2:
+        st.download_button(
+            "📘 Unduh Hasil Excel",
+            data=xls_buf.getvalue(),
+            file_name=f"hasil_agglomerative_{linkage_type}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
         )
 
-        if not features:
-            st.error("Pilih minimal satu fitur dari: Berat, Tinggi, BMI, Overweight, Stunting, Normal.")
-            st.stop()
-
-        id_col = st.selectbox("Kolom identitas (opsional)", options=[None] + id_cols,
-                              index=(0 if suggest_id is None else ([None] + id_cols).index(suggest_id)))
-
-        linkage = st.selectbox("Linkage (Agglomerative)", options=["ward", "complete", "average"], index=0)
-        scale = st.checkbox("Standarisasi fitur (StandardScaler)", value=True)
-        use_auto_k = st.checkbox("Pilih k otomatis menggunakan Silhouette (rentang 2-10)", value=True)
-        k_manual = st.number_input("Jumlah cluster (k) jika tidak otomatis", min_value=2, max_value=20, value=2, step=1)
-
-        work = df.copy()
-        work = work.replace([np.inf, -np.inf], np.nan)
-        sel = work[features].astype(float).fillna(0.0)
-
-    X = sel.values
-    if scale:
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-    else:
-        X_scaled = X
-
-    # silhouette untuk pemilihan k
-    sils = compute_silhouette_scores_agglomerative(X_scaled, linkage=linkage, k_max=10)
-    sils_clean = [(k, s) for k, s in sils if not np.isnan(s)]
-
-    if use_auto_k and sils_clean:
-        best_k = max(sils_clean, key=lambda x: x[1])[0]
-        k = int(best_k)
-        st.success(f"Memilih k = {k} berdasarkan silhouette (linkage={linkage}).")
-    else:
-        k = int(k_manual)
-        if use_auto_k and not sils_clean:
-            st.warning("Silhouette tidak dapat dihitung untuk semua k; menggunakan nilai k manual.")
-
-    # Davies-Bouldin index plot (k=2..10) — masih berguna untuk mengevaluasi
-    st.subheader("📈 Davies-Bouldin Index untuk k = 2..10 (Agglomerative)")
-    k_range_db = [k for k, _ in sils]
-    dbs = []
-    for kk in k_range_db:
-        try:
-            model_tmp = AgglomerativeClustering(n_clusters=kk, linkage=linkage)
-            labs_tmp = model_tmp.fit_predict(X_scaled)
-            db = davies_bouldin_score(X_scaled, labs_tmp)
-        except Exception:
-            db = np.nan
-        dbs.append(db)
-    fig_db = plt.figure(figsize=(6,3.5))
-    plt.plot(k_range_db, dbs, marker='o')
-    plt.xticks(k_range_db)
-    plt.xlabel("k (jumlah cluster)")
-    plt.ylabel("Davies-Bouldin index (lebih rendah lebih baik)")
-    plt.title("Davies-Bouldin Index per k (Agglomerative)")
-    plt.grid(True)
-    if k in k_range_db:
-        idx_db = k_range_db.index(k)
-        plt.scatter([k], [dbs[idx_db]], s=120, facecolors='none', edgecolors='black', linewidths=2, label=f"Chosen k = {k}")
-        plt.legend()
-    st.pyplot(fig_db, use_container_width=True)
-
-    # Silhouette scores plot
-    st.subheader("📊 Silhouette Scores untuk k = 2..10 (Agglomerative)")
-    ks = [kk for kk, _ in sils]
-    scores = [s for _, s in sils]
-    fig_sil = plt.figure(figsize=(6,3.5))
-    plt.plot(ks, scores, marker='o')
-    plt.xticks(ks)
-    plt.xlabel("k (jumlah cluster)")
-    plt.ylabel("Silhouette score")
-    plt.title("Silhouette Score per k (Agglomerative)")
-    plt.grid(True)
-    if k in ks:
-        idx = ks.index(k)
-        plt.scatter([ks[idx]], [scores[idx]], s=120, facecolors='none', edgecolors='black', linewidths=2, label=f"Chosen k = {k}")
-        plt.legend()
-    st.pyplot(fig_sil, use_container_width=True)
-
-    # Run Agglomerative
-    with st.spinner("Menjalankan AgglomerativeClustering dan PCA..."):
-        try:
-            model = AgglomerativeClustering(n_clusters=k, linkage=linkage)
-            labels = model.fit_predict(X_scaled)
-            pca = PCA(n_components=2)
-            pcs = pca.fit_transform(X_scaled)
-            st.success("Selesai.")
-        except Exception as e:
-            st.error(f"Gagal menjalankan AgglomerativeClustering atau PCA: {e}")
-            st.stop()
-
-    out = df.copy()
-    out["Cluster"] = labels
-    if id_col:
-        show_cols = [id_col, "Cluster"] + features
-    else:
-        show_cols = ["Cluster"] + features
-
-    st.subheader("📄 Hasil Klaster")
-    st.dataframe(out[show_cols].sort_values("Cluster").reset_index(drop=True), use_container_width=True)
-
-    st.subheader("🧮 Ringkasan per Cluster (rata-rata fitur)")
-    summary = out.groupby("Cluster")[features].mean().reset_index()
-    st.dataframe(summary, use_container_width=True)
-
-    # PCA visualization 2D
-    st.subheader("📈 Visualisasi 2D dengan PCA")
-    fig = plt.figure(figsize=(6,4))
-    unique_labels = np.unique(labels)
-    for c in unique_labels:
-        mask = labels == c
-        plt.scatter(pcs[mask,0], pcs[mask,1], label=f"Cluster {c}", alpha=0.8)
-    plt.xlabel(f"PC1 (var={pca.explained_variance_ratio_[0]:.2f})")
-    plt.ylabel(f"PC2 (var={pca.explained_variance_ratio_[1]:.2f})")
-    plt.legend()
-    plt.grid(True)
-    st.pyplot(fig, use_container_width=True)
-
-    # Download
-    st.subheader("💾 Unduh Hasil")
-    excel_bytes = to_excel_bytes({
-        "Clustered_Data": out,
-        "Cluster_Summary": summary
-    })
-    st.download_button(label="Unduh Excel (data & ringkasan)", data=excel_bytes,
-                       file_name="agglomerative_results.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                       use_container_width=True)
-    csv_buf = out.to_csv(index=False).encode("utf-8")
-    st.download_button(label="Unduh CSV (data berlabel)", data=csv_buf,
-                      file_name="agglomerative_labeled.csv", mime="text/csv", use_container_width=True)
-
-if __name__ == "__main__":
-    st.write("Halaman Agglomerative siap digunakan dalam aplikasi Streamlit utama.")
+    st.markdown("</div>", unsafe_allow_html=True)
