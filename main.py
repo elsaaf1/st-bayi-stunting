@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # -----------------------------
-# CSS Styling — Sidebar & Konten
+# CSS adaptif untuk light & dark mode
 # -----------------------------
 st.markdown("""
     <style>
@@ -25,40 +25,65 @@ st.markdown("""
         padding-right: 2rem;
     }
 
-    /* Sidebar styling */
-    [data-testid="stSidebar"] {
-        background-color: #f7f9fb;
-        padding-top: 1rem;
+    /* =====================
+       LIGHT MODE STYLING
+       ===================== */
+    [data-testid="stSidebar"][data-theme="light"], body[data-theme="light"] [data-testid="stSidebar"] {
+        background-color: #f7f9fb !important;
         border-right: 1px solid #d3d3d3;
-    }
-
-    /* Header sidebar */
-    [data-testid="stSidebar"] h2 {
-        font-size: 1.3rem;
-        font-weight: 600;
         color: #2c3e50;
     }
 
-    /* Option menu text styling */
-    div[data-testid="stSidebar"] .nav-link {
-        font-size: 1rem !important;
-        font-weight: 500 !important;
-        border-radius: 8px !important;
-        margin-bottom: 5px !important;
-    }
-
-    /* Hover & active effects */
-    div[data-testid="stSidebar"] .nav-link:hover {
-        background-color: #e9ecef !important;
+    body[data-theme="light"] .nav-link, 
+    body[data-theme="light"] [data-testid="stSidebar"] span,
+    body[data-theme="light"] [data-testid="stSidebar"] h2 {
         color: #2c3e50 !important;
     }
-    div[data-testid="stSidebar"] .nav-link.active {
+
+    body[data-theme="light"] .nav-link.active {
         background-color: #2c3e50 !important;
         color: white !important;
     }
+
+    body[data-theme="light"] .nav-link:hover {
+        background-color: #e9ecef !important;
+        color: #2c3e50 !important;
+    }
+
+    /* =====================
+       DARK MODE STYLING
+       ===================== */
+    [data-testid="stSidebar"][data-theme="dark"], body[data-theme="dark"] [data-testid="stSidebar"] {
+        background-color: #111827 !important;
+        border-right: 1px solid #333;
+        color: #f8f9fa !important;
+    }
+
+    body[data-theme="dark"] .nav-link, 
+    body[data-theme="dark"] [data-testid="stSidebar"] span,
+    body[data-theme="dark"] [data-testid="stSidebar"] h2 {
+        color: #e5e7eb !important;
+    }
+
+    body[data-theme="dark"] .nav-link.active {
+        background-color: #2563eb !important;
+        color: white !important;
+    }
+
+    body[data-theme="dark"] .nav-link:hover {
+        background-color: #1e293b !important;
+        color: white !important;
+    }
+
+    /* Umum: gaya link */
+    .nav-link {
+        font-size: 1rem !important;
+        font-weight: 500 !important;
+        border-radius: 8px !important;
+        margin-bottom: 6px !important;
+    }
     </style>
 """, unsafe_allow_html=True)
-
 
 # -----------------------------
 # Sidebar Navigation
@@ -72,15 +97,14 @@ with st.sidebar:
         menu_icon="cast",
         default_index=0,
         styles={
-            "container": {"padding": "0!important", "background-color": "#f7f9fb"},
-            "icon": {"color": "#2c3e50", "font-size": "1.2rem"},
-            "nav-link": {"font-size": "1rem", "text-align": "left", "margin": "0px"},
-            "nav-link-selected": {"background-color": "#2c3e50", "color": "white"},
+            "container": {"padding": "0!important", "background-color": "transparent"},
+            "icon": {"font-size": "1.2rem"},
+            "nav-link": {"text-align": "left", "margin": "0px"},
+            "nav-link-selected": {"font-weight": "600"},
         }
     )
     st.markdown("---")
     st.caption("🧠 Analisis data stunting, normal, dan overweight anak menggunakan metode clustering.")
-
 
 # -----------------------------
 # Routing to selected method
