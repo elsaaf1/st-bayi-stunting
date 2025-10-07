@@ -1,258 +1,274 @@
+# kmeans.py
 import io
-import numpy as np
-import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler
+import pandas as pd
 from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, davies_bouldin_score
-
-@st.cache_data(show_spinner=False)
-def read_file(file, sheet_name=None):
-    if file is None:
-        return None, None
-    name = getattr(file, "name", "").lower()
-    try:
-        if name.endswith(".csv"):
-            df = pd.read_csv(file)
-            return df, None
-        else:
-            xls = pd.ExcelFile(file)
-            sheets = xls.sheet_names
-            if sheet_name is None:
-                preferred = [s for s in sheets if "entry" in s.lower() or "data" in s.lower()]
-                sheet = preferred[0] if preferred else sheets[0]
-            else:
-                sheet = sheet_name
-            df = pd.read_excel(xls, sheet_name=sheet)
-            return df, sheets
-    except Exception as e:
-        st.error(f"Gagal membaca file: {e}")
-        return None, None
+import plotly.express as px
+import plotly.graph_objects as go
+import numpy as np
 
 
-def is_numeric_series(s):
-    return pd.api.types.is_numeric_dtype(s)
+# -----------------------
+# Helper functions
+# -----------------------
+@st.cache_data
+def read_data(uploaded):
+    if uploaded is None:
+        return None
+    name = uploaded.name.lower()
+    if name.endswith(".csv"):
+        df = pd.read_csv(uploaded)
+    else:
+        df = pd.read_excel(uploaded)
+
+    # Format kolom tanggal lahir agar tidak menampilkan waktu
+    for col in df.columns:
+        if "tgl" in col.lower() and "lahir" in col.lower():
+            try:
+                df[col] = pd.to_datetime(df[col]).dt.date
+            except Exception:
+                pass
+    return df
 
 
-def to_excel_bytes(df_dict):
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        for name, df in df_dict.items():
-            df.to_excel(writer, index=False, sheet_name=name[:31])
-    buf.seek(0)
-    return buf
+def prepare_scaled_matrix(df, feature_cols):
+    X = df[feature_cols].copy()
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    return X_scaled, scaler
 
 
-def compute_silhouette_scores(X, k_max=10, random_state=42):
-    scores = []
-    k_range = range(2, min(k_max, len(X)) + 1)
-    for k in k_range:
-        km = KMeans(n_clusters=k, random_state=random_state)
-        labels = km.fit_predict(X)
+def fit_kmeans_on_matrix(X_scaled, n_clusters, random_state=42):
+    """Menjalankan KMeans pada matrix ter-scaling, tanpa expose n_init."""
+    km = KMeans(n_clusters=n_clusters, random_state=random_state)
+    labels = km.fit_predict(X_scaled)
+    inertia = km.inertia_
+    return labels, km, inertia
+
+
+def fixed_mapping(clusters):
+    """Pemetaan fixed cluster → label."""
+    mapping = {0: "Stunting", 1: "Normal", 2: "Overweight"}
+    return [mapping.get(c, f"Lainnya_{c}") for c in clusters]
+
+
+def compute_elbow(X_scaled, k_max=10, random_state=42):
+    """Hitung inertia untuk k=1..k_max (elbow plot)."""
+    inertias = []
+    ks = list(range(1, k_max + 1))
+    for k in ks:
         try:
-            sc = silhouette_score(X, labels)
+            _, km, inertia = fit_kmeans_on_matrix(X_scaled, k, random_state=random_state)
+            inertias.append(inertia)
         except Exception:
-            sc = np.nan
-        scores.append((k, sc))
-    return scores
+            inertias.append(np.nan)
+    return ks, inertias
 
 
+def compute_scores_over_k(X_scaled, k_min=2, k_max=10, random_state=42):
+    """Hitung silhouette & davies untuk k in [k_min..k_max]."""
+    ks = []
+    silhouettes = []
+    davies = []
+    for k in range(k_min, k_max + 1):
+        try:
+            labels, _, _ = fit_kmeans_on_matrix(X_scaled, k, random_state=random_state)
+            # silhouette requires >1 cluster and at least one sample per cluster
+            if len(np.unique(labels)) > 1:
+                sil = silhouette_score(X_scaled, labels)
+                db = davies_bouldin_score(X_scaled, labels)
+            else:
+                sil, db = np.nan, np.nan
+        except Exception:
+            sil, db = np.nan, np.nan
+        ks.append(k)
+        silhouettes.append(sil)
+        davies.append(db)
+    return ks, silhouettes, davies
+
+
+# -----------------------
+# Streamlit Page
+# -----------------------
 def show():
-    st.title("🔬 K-Means Clustering")
-    st.caption("Analisis klaster untuk data stunting/gizi — pilih fitur, tentukan jumlah klaster (atau biarkan auto), dan unduh hasil.")
+    st.title("Metode K-Means — Analisa BMI / Berat / Tinggi")
+    st.markdown("""
+    Gunakan **K-Means** untuk mengelompokkan data anak berdasarkan kolom:
+    **BMI**, **Berat**, dan **Tinggi**.
+    """)
+ 
+    uploaded = st.file_uploader("📂 Unggah file data (Excel/CSV)", type=["xlsx", "xls", "csv"])
 
-    with st.expander("📥 Upload Data", expanded=True):
-        file = st.file_uploader("Unggah berkas (.csv / .xlsx)", type=["csv","xlsx"], accept_multiple_files=False)
-        sheet_name = None
-        df, sheets = read_file(file, sheet_name)
-        if file is not None and sheets:
-            sheet_name = st.selectbox("Pilih sheet Excel", options=sheets, index=0)
-            df, _ = read_file(file, sheet_name)
+    if uploaded is None:
+        st.info("Silakan unggah file untuk memulai analisis.")
+        return
 
-    if df is None:
-        st.info("Unggah data untuk mulai analisis.")
-        st.stop()
+    df = read_data(uploaded)
+    st.subheader("Preview Data")
+    st.dataframe(df.head(15), use_container_width=True)
 
-    # kolom id kandidat (non-numeric)
-    id_cols = [c for c in df.columns if not is_numeric_series(df[c])]
-    suggest_id = None
-    for c in ["Puskesmas","PUSKESMAS","Nama Puskesmas","Puskesmas Name","Kode"]:
-        if c in id_cols:
-            suggest_id = c
-            break
+    # Deteksi otomatis kolom fitur
+    expected_cols = ["Berat", "Tinggi", "BMI"]
+    feature_cols = [col for col in expected_cols if col in df.columns]
 
-    with st.expander("⚙️ Pilih fitur & pengaturan", expanded=True):
-        # hanya izinkan kolom berikut
-        allowed = ["Berat", "Tinggi", "BMI", "Overweight", "Stunting", "Normal"]
-        allowed_numeric = [c for c in allowed if c in df.columns and is_numeric_series(df[c])]
+    if len(feature_cols) < 2:
+        st.error("❌ Kolom yang dibutuhkan tidak lengkap. Pastikan ada kolom 'Berat', 'Tinggi', dan 'BMI'.")
+        return
 
-        if not allowed_numeric:
-            st.error("File tidak memiliki kolom numerik dari daftar: Berat, Tinggi, BMI, Overweight, Stunting, atau Normal.")
-            st.stop()
+    # Bersihkan data (hanya baris yang punya semua fitur)
+    df_work = df.dropna(subset=feature_cols).copy()
+    if df_work.empty:
+        st.error("Tidak ada data valid setelah pembersihan NA.")
+        return
 
-        # Multiselect hanya menampilkan kolom yang diizinkan
-        features = st.multiselect(
-            "Pilih fitur numerik untuk clustering",
-            options=allowed_numeric,
-            default=allowed_numeric  # default pilih semua yang ada
+    # Persiapkan matriks ter-scaling
+    X_scaled, scaler = prepare_scaled_matrix(df_work, feature_cols)
+
+    # -----------------------
+    # Elbow + Silhouette + Davies
+    # -----------------------
+    k_max = 10 if X_scaled.shape[0] >= 10 else max(3, X_scaled.shape[0] - 1)
+    ks_elbow, inertias = compute_elbow(X_scaled, k_max=k_max)
+    ks_scores, silhouettes, davies = compute_scores_over_k(X_scaled, k_min=2, k_max=k_max)
+
+    st.subheader("🔎 Evaluasi Cluster untuk Berbagai Nilai k")
+
+    # Elbow plot (inertia)
+    fig_elbow = go.Figure()
+    fig_elbow.add_trace(go.Scatter(x=ks_elbow, y=inertias, mode="lines+markers", name="Inertia"))
+    fig_elbow.update_layout(title="Elbow Plot (Inertia)", xaxis_title="Jumlah Cluster (k)", yaxis_title="Inertia")
+    st.plotly_chart(fig_elbow, use_container_width=True)
+
+    # Silhouette plot
+    fig_sil = go.Figure()
+    fig_sil.add_trace(go.Scatter(x=ks_scores, y=silhouettes, mode="lines+markers", name="Silhouette Score"))
+    fig_sil.update_layout(title="Silhouette Score per k (lebih tinggi lebih baik)",
+                          xaxis_title="Jumlah Cluster (k)", yaxis_title="Silhouette Score")
+    st.plotly_chart(fig_sil, use_container_width=True)
+
+    # Davies–Bouldin plot
+    fig_db = go.Figure()
+    fig_db.add_trace(go.Scatter(x=ks_scores, y=davies, mode="lines+markers", name="Davies–Bouldin Index"))
+    fig_db.update_layout(title="Davies–Bouldin Index per k (lebih rendah lebih baik)",
+                         xaxis_title="Jumlah Cluster (k)", yaxis_title="Davies–Bouldin Index")
+    st.plotly_chart(fig_db, use_container_width=True)
+
+    # -----------------------
+    # Jalankan KMeans fixed k=3
+    # -----------------------
+    fixed_k = 3
+    if X_scaled.shape[0] < fixed_k:
+        st.error(f"Jumlah sampel ({X_scaled.shape[0]}) kurang dari k={fixed_k}. Tidak dapat menjalankan K-Means.")
+        return
+
+    labels_3, km3, inertia3 = fit_kmeans_on_matrix(X_scaled, fixed_k)
+    df_work["Cluster"] = labels_3
+    df_work["Label"] = fixed_mapping(labels_3)
+
+    # Hitung metrik untuk k=3
+    sil_3, db_3 = None, None
+    try:
+        if len(np.unique(labels_3)) > 1:
+            sil_3 = silhouette_score(X_scaled, labels_3)
+            db_3 = davies_bouldin_score(X_scaled, labels_3)
+    except Exception:
+        sil_3, db_3 = None, None
+
+
+    # Ringkasan hasil
+    st.subheader("📊 Ringkasan Hasil")
+    mapping_df = pd.DataFrame({"Cluster": [0, 1, 2], "Label": ["Stunting", "Normal", "Overweight"]})
+    st.dataframe(mapping_df, use_container_width=True)
+
+    # Tampilkan metrik k=3
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Jumlah data", len(df_work))
+    with col2:
+        st.metric("Elbow (Inertia)", f"{inertia3:.2f}")
+    with col3:
+        st.metric("Silhouette", f"{sil_3:.3f}" if sil_3 is not None else "—")
+    with col4:
+        st.metric("Davies–Bouldin", f"{db_3:.3f}" if db_3 is not None else "—")
+
+    # Statistik per Label
+    st.subheader("Statistik per Label")
+    agg = df_work.groupby("Label")[feature_cols].mean().round(2)
+    agg["Jumlah Anak"] = df_work.groupby("Label").size()
+    st.dataframe(agg.reset_index(), use_container_width=True)
+
+    # Visualisasi k=3
+    st.subheader("🗺️ Visualisasi Clustering")
+    x_axis = "BMI"
+    y_axis = "Tinggi" if "Tinggi" in df_work.columns else feature_cols[0]
+    fig = px.scatter(df_work, x=x_axis, y=y_axis, color="Label", hover_data=df_work.columns,
+                     title=f"Sebaran Data: {x_axis} vs {y_axis}")
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Preview hasil
+    st.subheader("📝 Data Hasil")
+    st.dataframe(df_work.head(50), use_container_width=True)
+
+        # -----------------------
+    # Unduh hasil
+    # -----------------------
+    st.subheader("⬇️ Unduh Hasil Analisa K-Means")
+
+    # CSS agar tombol rata tengah
+    st.markdown("""
+        <style>
+        div.download-buttons {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;  /* jarak antar tombol */
+            margin-top: 10px;
+            margin-bottom: 20px;
+        }
+        div.download-buttons > div {
+            flex: 0 0 auto;  /* agar tombol tidak melar */
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Buffer CSV dan Excel
+    csv_buf = io.StringIO()
+    df_work.to_csv(csv_buf, index=False)
+
+    xls_buf = io.BytesIO()
+    with pd.ExcelWriter(xls_buf, engine="xlsxwriter") as writer:
+        df_work.to_excel(writer, index=False, sheet_name="Hasil")
+        mapping_df.to_excel(writer, index=False, sheet_name="Mapping")
+        metrics_df = pd.DataFrame({
+            "k": ks_scores,
+            "silhouette": silhouettes,
+            "davies_bouldin": davies
+        })
+        metrics_df.to_excel(writer, index=False, sheet_name="Metrics_over_k")
+        elbow_df = pd.DataFrame({"k": ks_elbow, "inertia": inertias})
+        elbow_df.to_excel(writer, index=False, sheet_name="Elbow")
+
+    # Tampilkan tombol di tengah dan sejajar
+    st.markdown('<div class="download-buttons">', unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            "📄 Unduh Hasil CSV",
+            data=csv_buf.getvalue(),
+            file_name="hasil_kmeans_fixed.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    with col2:
+        st.download_button(
+            "📘 Unduh Hasil Excel",
+            data=xls_buf.getvalue(),
+            file_name="hasil_kmeans_fixed_with_metrics.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
         )
 
-        if not features:
-            st.error("Pilih minimal satu fitur dari: Berat, Tinggi, BMI, Overweight, Stunting, Normal.")
-            st.stop()
-
-        id_col = st.selectbox("Kolom identitas (opsional)", options=[None] + id_cols,
-                              index=(0 if suggest_id is None else ([None] + id_cols).index(suggest_id)))
-        scale = st.checkbox("Standarisasi fitur (StandardScaler)", value=True)
-        use_auto_k = st.checkbox("Pilih k otomatis menggunakan Silhouette (rentang 2-10)", value=True)
-        k_manual = st.number_input("Jumlah cluster (k) jika tidak otomatis", min_value=2, max_value=20, value=2, step=1)
-        random_state = st.number_input("Random state", value=42, step=1)
-
-        work = df.copy()
-        work = work.replace([np.inf, -np.inf], np.nan)
-        sel = work[features].astype(float).fillna(0.0)
-
-    X = sel.values
-    if scale:
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-    else:
-        X_scaled = X
-
-    # Determine k and compute silhouette scores for visualization
-    sils = compute_silhouette_scores(X_scaled, k_max=10, random_state=int(random_state))
-    sils_dict = {k: s for k, s in sils}
-
-    if use_auto_k:
-        sils_clean = [(k, s) for k, s in sils if not np.isnan(s)]
-        if sils_clean:
-            best_k = max(sils_clean, key=lambda x: x[1])[0]
-        else:
-            best_k = int(k_manual)
-        k = int(best_k)
-        st.success(f"Memilih k = {k} berdasarkan silhouette.")
-    else:
-        k = int(k_manual)
-
-    # Elbow plot (WCSS)
-    st.subheader("🔍 Diagram Elbow (Within-Cluster Sum of Squares)")
-    k_max_elbow = min(10, len(X))
-    k_range_elbow = list(range(1, k_max_elbow + 1))
-    wcss = []
-    for kk in k_range_elbow:
-        km_temp = KMeans(n_clusters=kk, random_state=int(random_state))
-        km_temp.fit(X_scaled)
-        try:
-            wcss.append(km_temp.inertia_)
-        except Exception:
-            wcss.append(np.nan)
-    fig_elbow = plt.figure(figsize=(6,3.5))
-    plt.plot(k_range_elbow, wcss, marker='o')
-    plt.xticks(k_range_elbow)
-    plt.xlabel('k (jumlah cluster)')
-    plt.ylabel('WCSS (inertia)')
-    plt.title('Elbow Plot: WCSS vs k')
-    plt.grid(True)
-    if k in k_range_elbow:
-        idx_el = k_range_elbow.index(k)
-        plt.scatter([k], [wcss[idx_el]], s=120, facecolors='none', edgecolors='black', linewidths=2, label=f"Chosen k = {k}")
-        plt.legend()
-    st.pyplot(fig_elbow, use_container_width=True)
-
-    # Davies-Bouldin index plot
-    st.subheader("📈 Davies-Bouldin Index untuk k = 2..10")
-    k_range_db = [k for k,_ in sils]
-    dbs = []
-    for kk in k_range_db:
-        try:
-            km_tmp = KMeans(n_clusters=kk, random_state=int(random_state))
-            labs = km_tmp.fit_predict(X_scaled)
-            db = davies_bouldin_score(X_scaled, labs)
-        except Exception:
-            db = np.nan
-        dbs.append(db)
-    fig_db = plt.figure(figsize=(6,3.5))
-    plt.plot(k_range_db, dbs, marker='o')
-    plt.xticks(k_range_db)
-    plt.xlabel("k (jumlah cluster)")
-    plt.ylabel("Davies-Bouldin index (lebih rendah lebih baik)")
-    plt.title("Davies-Bouldin Index per k")
-    plt.grid(True)
-    if k in k_range_db:
-        idx_db = k_range_db.index(k)
-        plt.scatter([k], [dbs[idx_db]], s=120, facecolors='none', edgecolors='black', linewidths=2, label=f"Chosen k = {k}")
-        plt.legend()
-    st.pyplot(fig_db, use_container_width=True)
-
-    st.subheader("📊 Silhouette Scores untuk k = 2..10")
-    ks = [k for k, _ in sils]
-    scores = [s for _, s in sils]
-    fig_sil = plt.figure(figsize=(6,3.5))
-    plt.plot(ks, scores, marker='o')
-    plt.xticks(ks)
-    plt.xlabel("k (jumlah cluster)")
-    plt.ylabel("Silhouette score")
-    plt.title("Silhouette Score per k")
-    plt.grid(True)
-    if k in ks:
-        idx = ks.index(k)
-        plt.scatter([ks[idx]], [scores[idx]], s=120, facecolors='none', edgecolors='black', linewidths=2, label=f"Chosen k = {k}")
-        plt.legend()
-    st.pyplot(fig_sil, use_container_width=True)
-
-    with st.spinner("Menjalankan K-Means dan PCA..."):
-        try:
-            km = KMeans(n_clusters=k, random_state=int(random_state))
-            labels = km.fit_predict(X_scaled)
-            centers = km.cluster_centers_
-            pca = PCA(n_components=2)
-            pcs = pca.fit_transform(X_scaled)
-            st.success("Selesai.")
-        except Exception as e:
-            st.error(f"Gagal menjalankan K-Means atau PCA: {e}")
-            st.stop()
-
-    out = df.copy()
-    out["Cluster"] = labels
-    if id_col:
-        show_cols = [id_col, "Cluster"] + features
-    else:
-        show_cols = ["Cluster"] + features
-
-    st.subheader("📄 Hasil Klaster")
-    st.dataframe(out[show_cols].sort_values("Cluster").reset_index(drop=True), use_container_width=True)
-
-    st.subheader("🧮 Ringkasan per Cluster (rata-rata fitur)")
-    summary = out.groupby("Cluster")[features].mean().reset_index()
-    st.dataframe(summary, use_container_width=True)
-
-    st.subheader("📈 Visualisasi 2D dengan PCA")
-    fig = plt.figure(figsize=(6,4))
-    unique_labels = np.unique(labels)
-    for c in unique_labels:
-        mask = labels == c
-        plt.scatter(pcs[mask,0], pcs[mask,1], label=f"Cluster {c}", alpha=0.8)
-    plt.xlabel(f"PC1 (var={pca.explained_variance_ratio_[0]:.2f})")
-    plt.ylabel(f"PC2 (var={pca.explained_variance_ratio_[1]:.2f})")
-    plt.legend()
-    plt.grid(True)
-    st.pyplot(fig, use_container_width=True)
-
-    st.subheader("💾 Unduh Hasil")
-    excel_bytes = to_excel_bytes({
-        "Clustered_Data": out,
-        "Cluster_Summary": summary
-    })
-    st.download_button(label="Unduh Excel (data & ringkasan)", data=excel_bytes,
-                       file_name="kmeans_results.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                       use_container_width=True)
-    csv_buf = out.to_csv(index=False).encode("utf-8")
-    st.download_button(label="Unduh CSV (data berlabel)", data=csv_buf,
-                      file_name="kmeans_labeled.csv", mime="text/csv", use_container_width=True)
-
-
-if __name__ == "__main__":
-    st.write("Modul K-Means siap digunakan dalam aplikasi Streamlit utama.")
+    st.markdown("</div>", unsafe_allow_html=True)
