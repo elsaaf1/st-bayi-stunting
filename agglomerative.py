@@ -183,6 +183,10 @@ def show():
     )
     st.plotly_chart(fig, use_container_width=True)
 
+    # Preview hasil
+    st.subheader("📝 Data Hasil")
+    st.dataframe(df_work, use_container_width=True)
+    
     # -----------------------
     # Unduh hasil
     # -----------------------
