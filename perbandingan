@@ -1,0 +1,43 @@
+import matplotlib.pyplot as plt
+import numpy as np
+
+cluster = ['Cluster 1','Cluster 2','Cluster 3']
+
+kmeans = [42,58,37]
+
+agglo = [39,61,37]
+
+x = np.arange(len(cluster))
+width = 0.35
+
+fig, ax = plt.subplots(figsize=(8,5))
+
+bar1 = ax.bar(x-width/2, kmeans, width,
+              label='K-Means')
+
+bar2 = ax.bar(x+width/2, agglo, width,
+              label='Agglomerative')
+
+ax.set_ylabel('Jumlah Data')
+
+ax.set_xlabel('Cluster')
+
+ax.set_title('Perbandingan Jumlah Anggota Cluster')
+
+ax.set_xticks(x)
+
+ax.set_xticklabels(cluster)
+
+ax.legend()
+
+for bars in [bar1, bar2]:
+    for b in bars:
+        ax.text(
+            b.get_x()+b.get_width()/2,
+            b.get_height()+1,
+            int(b.get_height()),
+            ha='center'
+        )
+
+plt.tight_layout()
+plt.show()
