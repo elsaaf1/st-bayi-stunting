@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def show():
- st.title("Perbandingan Algoritma")
+ st.title("Perbandingan Algoritma Cluster")
  alg=["K-Means","Agglomerative"]
  sil=[0.419,0.412]
  dbi=[0.863,0.869]
