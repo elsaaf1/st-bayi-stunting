@@ -2,6 +2,7 @@ import streamlit as st
 from streamlit_option_menu import option_menu
 import kmeans
 import agglomerative
+import comparison
 
 # -----------------------------
 # Konfigurasi halaman Streamlit
@@ -92,8 +93,8 @@ with st.sidebar:
     st.title("📂 Menu Navigasi")
     selected = option_menu(
         menu_title=None,
-        options=["Metode K-Means", "Metode Agglomerative"],
-        icons=["bar-chart-line", "diagram-3"],
+        options=["Metode K-Means", "Metode Agglomerative","Perbandingan Algoritma"],
+        icons=["bar-chart-line", "diagram-3","bar-chart"],
         menu_icon="cast",
         default_index=0,
         styles={
@@ -113,3 +114,5 @@ if selected == "Metode K-Means":
     kmeans.show()
 elif selected == "Metode Agglomerative":
     agglomerative.show()
+elif selected == "Perbandingan Algoritma":
+    comparison.show()
