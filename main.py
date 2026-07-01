@@ -114,5 +114,5 @@ if selected == "Metode K-Means":
     kmeans.show()
 elif selected == "Metode Agglomerative":
     agglomerative.show()
-elif selected == "Perbandingan Algoritma Cluster":
+elif selected == "Perbandingan Algoritma":
     comparison.show()
