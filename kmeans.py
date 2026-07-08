@@ -71,6 +71,11 @@ def compute_scores_over_k(X_scaled, k_min=2, k_max=10, random_state=42, n_init=1
             if len(np.unique(labels)) > 1:
                 sil = silhouette_score(X_scaled, labels)
                 db = davies_bouldin_score(X_scaled, labels)
+                def get_result():
+    return {
+        "silhouette": sil,
+        "dbi": db
+    }
             else:
                 sil, db = np.nan, np.nan
         except Exception:
