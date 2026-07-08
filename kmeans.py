@@ -207,7 +207,28 @@ def show():
         st.metric("Silhouette (k=3)", f"{sil_3:.3f}" if sil_3 is not None else "—")
     with col4:
         st.metric("Davies–Bouldin (k=3)", f"{db_3:.3f}" if db_3 is not None else "—")
+    with col4:
+        st.metric("Davies–Bouldin (k=3)", f"{db_3:.3f}" if db_3 is not None else "—")
+        
+import matplotlib.pyplot as plt
 
+st.subheader("📊 Grafik Davies–Bouldin Index (k=3)")
+
+fig, ax = plt.subplots(figsize=(4,3))
+
+ax.bar(["K-Means"], [db_3])
+
+ax.set_ylabel("Nilai DBI")
+ax.set_title("Davies–Bouldin Index K-Means")
+
+ax.text(
+    0,
+    db_3 + 0.01,
+    f"{db_3:.3f}",
+    ha="center"
+)
+
+st.pyplot(fig)
     # Statistik per Label
     st.subheader("Statistik per Label")
     agg = df_work.groupby("Label")[feature_cols].mean().round(2)
@@ -222,34 +243,6 @@ def show():
                      title=f"Sebaran Data: {x_axis} vs {y_axis}")
     st.plotly_chart(fig, use_container_width=True)
     
-from sklearn.metrics import davies_bouldin_score
-
-dbi = davies_bouldin_score(X_scaled, cluster)
-
-st.subheader("Davies-Bouldin Index (DBI)")
-
-st.write(f"Nilai DBI : {dbi:.3f}")
-
-    import matplotlib.pyplot as plt
-
-fig, ax = plt.subplots(figsize=(4,3))
-
-ax.bar(
-    ["K-Means"],
-    [dbi]
-)
-
-ax.set_ylabel("DBI")
-ax.set_title("Davies-Bouldin Index")
-
-ax.text(
-    0,
-    dbi + 0.01,
-    f"{dbi:.3f}",
-    ha="center"
-)
-
-st.pyplot(fig)
 
     # -----------------------
     # 📝 Data Hasil (preview)
