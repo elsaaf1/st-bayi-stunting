@@ -1,7 +1,6 @@
 # kmeans.py
 import io
 import streamlit as st
-import kmeans
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
@@ -208,28 +207,7 @@ def show():
         st.metric("Silhouette (k=3)", f"{sil_3:.3f}" if sil_3 is not None else "—")
     with col4:
         st.metric("Davies–Bouldin (k=3)", f"{db_3:.3f}" if db_3 is not None else "—")
-    with col4:
-        st.metric("Davies–Bouldin (k=3)", f"{db_3:.3f}" if db_3 is not None else "—")
-        
-import matplotlib.pyplot as plt
 
-st.subheader("📊 Grafik Davies–Bouldin Index (k=3)")
-
-fig, ax = plt.subplots(figsize=(4,3))
-
-ax.bar(["K-Means"], [db_3])
-
-ax.set_ylabel("Nilai DBI")
-ax.set_title("Davies–Bouldin Index K-Means")
-
-ax.text(
-    0,
-    db_3 + 0.01,
-    f"{db_3:.3f}",
-    ha="center"
-)
-
-st.pyplot(fig)
     # Statistik per Label
     st.subheader("Statistik per Label")
     agg = df_work.groupby("Label")[feature_cols].mean().round(2)
@@ -243,7 +221,6 @@ st.pyplot(fig)
     fig = px.scatter(df_work, x=x_axis, y=y_axis, color="Label", hover_data=df_work.columns,
                      title=f"Sebaran Data: {x_axis} vs {y_axis}")
     st.plotly_chart(fig, use_container_width=True)
-    
 
     # -----------------------
     # 📝 Data Hasil (preview)
