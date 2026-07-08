@@ -221,6 +221,35 @@ def show():
     fig = px.scatter(df_work, x=x_axis, y=y_axis, color="Label", hover_data=df_work.columns,
                      title=f"Sebaran Data: {x_axis} vs {y_axis}")
     st.plotly_chart(fig, use_container_width=True)
+    
+from sklearn.metrics import davies_bouldin_score
+
+dbi = davies_bouldin_score(X_scaled, cluster)
+
+st.subheader("Davies-Bouldin Index (DBI)")
+
+st.write(f"Nilai DBI : {dbi:.3f}")
+
+    import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(4,3))
+
+ax.bar(
+    ["K-Means"],
+    [dbi]
+)
+
+ax.set_ylabel("DBI")
+ax.set_title("Davies-Bouldin Index")
+
+ax.text(
+    0,
+    dbi + 0.01,
+    f"{dbi:.3f}",
+    ha="center"
+)
+
+st.pyplot(fig)
 
     # -----------------------
     # 📝 Data Hasil (preview)
