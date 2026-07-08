@@ -1,33 +1,29 @@
-from sklearn.cluster import KMeans, AgglomerativeClustering
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score, davies_bouldin_score
-import pandas as pd
+import streamlit as st
 
-# Membaca data
-df = pd.read_excel("Rekap Entry April by Name.xlsx")
+import matplotlib.pyplot as plt
 
-# Variabel yang digunakan
-X = df[["Berat Badan", "Tinggi Badan", "BMI"]]
+import numpy as np
 
-# Normalisasi
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
 
-# K-Means
-kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
-labels_kmeans = kmeans.fit_predict(X_scaled)
 
-# Agglomerative
-agg = AgglomerativeClustering(n_clusters=3)
-labels_agg = agg.fit_predict(X_scaled)
+def show():
 
-# Hitung metrik
-sil = [
-    silhouette_score(X_scaled, labels_kmeans),
-    silhouette_score(X_scaled, labels_agg)
-]
+ st.title("Perbandingan Algoritma Cluster")
 
-dbi = [
-    davies_bouldin_score(X_scaled, labels_kmeans),
-    davies_bouldin_score(X_scaled, labels_agg)
-]
+ alg=["K-Means","Agglomerative"]
+
+ sil=[0.419,0.412]
+
+ dbi=[0.863,0.869]
+
+ x=np.arange(2);w=0.35
+
+ fig, ax = plt.subplots(figsize=(6,4))
+
+ b1=ax.bar(x-w/2,sil,w,label="Silhouette")
+
+ b2=ax.bar(x+w/2,dbi,w,label="DBI")
+
+ ax.set_xticks(x);ax.set_xticklabels(alg);ax.legend()
+
+ st.pyplot(fig)
