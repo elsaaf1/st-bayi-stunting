@@ -1,29 +1,139 @@
 import streamlit as st
-
 import matplotlib.pyplot as plt
-
+import pandas as pd
 import numpy as np
-
 
 
 def show():
 
- st.title("Perbandingan Algoritma Cluster")
+    st.title("📊 Perbandingan Algoritma Clustering")
 
- alg=["K-Means","Agglomerative"]
+    st.markdown("""
+    Halaman ini menyajikan hasil evaluasi antara algoritma
+    **K-Means** dan **Agglomerative Clustering**
+    berdasarkan nilai **Silhouette Score**
+    dan **Davies–Bouldin Index (DBI)**.
+    """)
 
- sil=[0.419,0.412]
+    # ==========================
+    # Nilai Evaluasi
+    # ==========================
 
- dbi=[0.863,0.869]
+    algoritma = ["K-Means", "Agglomerative"]
 
- x=np.arange(2);w=0.35
+    silhouette = [0.419, 0.412]
 
- fig, ax = plt.subplots(figsize=(6,4))
+    dbi = [0.863, 0.869]
 
- b1=ax.bar(x-w/2,sil,w,label="Silhouette")
+    x = np.arange(len(algoritma))
+    width = 0.35
 
- b2=ax.bar(x+w/2,dbi,w,label="DBI")
+    # ==========================
+    # Grafik
+    # ==========================
 
- ax.set_xticks(x);ax.set_xticklabels(alg);ax.legend()
+    fig, ax = plt.subplots(figsize=(8,5))
 
- st.pyplot(fig)
+    bars1 = ax.bar(
+        x-width/2,
+        silhouette,
+        width,
+        label="Silhouette Score"
+    )
+
+    bars2 = ax.bar(
+        x+width/2,
+        dbi,
+        width,
+        label="Davies-Bouldin Index"
+    )
+
+    ax.set_xticks(x)
+
+    ax.set_xticklabels(algoritma)
+
+    ax.set_ylabel("Nilai Evaluasi")
+
+    ax.set_title("Perbandingan Algoritma Clustering")
+
+    ax.legend()
+
+    # Menampilkan nilai di atas batang
+    for bar in bars1:
+
+        height = bar.get_height()
+
+        ax.text(
+            bar.get_x()+bar.get_width()/2,
+            height+0.01,
+            f"{height:.3f}",
+            ha="center",
+            fontsize=9
+        )
+
+    for bar in bars2:
+
+        height = bar.get_height()
+
+        ax.text(
+            bar.get_x()+bar.get_width()/2,
+            height+0.01,
+            f"{height:.3f}",
+            ha="center",
+            fontsize=9
+        )
+
+    st.pyplot(fig)
+
+    # ==========================
+    # Penjelasan
+    # ==========================
+
+    st.subheader("Interpretasi Hasil")
+
+    st.write("""
+Silhouette Score digunakan untuk mengukur seberapa baik setiap data
+berada pada cluster yang terbentuk. Semakin mendekati nilai 1 maka
+kualitas cluster semakin baik.
+
+Davies–Bouldin Index (DBI) digunakan untuk mengukur tingkat kemiripan
+antar cluster. Semakin kecil nilai DBI maka kualitas cluster semakin baik.
+
+Berdasarkan hasil evaluasi, algoritma K-Means memiliki Silhouette Score
+lebih tinggi dan DBI lebih rendah dibandingkan Agglomerative Clustering.
+Hal ini menunjukkan bahwa K-Means memberikan kualitas cluster yang lebih baik
+untuk data antropometri balita pada penelitian ini.
+""")
+
+    # ==========================
+    # Tabel
+    # ==========================
+
+    hasil = pd.DataFrame({
+
+        "Algoritma": algoritma,
+
+        "Silhouette Score": silhouette,
+
+        "Davies-Bouldin Index": dbi
+
+    })
+
+    st.subheader("Tabel Perbandingan")
+
+    st.dataframe(
+        hasil,
+        use_container_width=True
+    )
+
+    # ==========================
+    # Kesimpulan
+    # ==========================
+
+    st.success("""
+Kesimpulan:
+
+Algoritma K-Means menghasilkan kualitas cluster yang lebih baik
+dibandingkan Agglomerative Clustering berdasarkan
+Silhouette Score dan Davies–Bouldin Index.
+""")
