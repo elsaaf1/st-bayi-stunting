@@ -1,44 +1,18 @@
-from sklearn.metrics import davies_bouldin_score
-from sklearn.cluster import KMeans, AgglomerativeClustering
+import pandas as pd
 
-# KMeans
-kmeans = KMeans(
-    n_clusters=3,
-    random_state=42,
-    n_init=10
-)
+from sklearn.preprocessing import StandardScaler
 
-kmeans_labels = kmeans.fit_predict(X_scaled)
+df = pd.read_excel("Rekap Entry April by Name.xlsx")
 
-dbi_kmeans = davies_bouldin_score(
-    X_scaled,
-    kmeans_labels
-)
+X = df[
+    [
+        "Berat Badan",
+        "Tinggi Badan",
+        "BMI"
+    ]
+]
 
-# Agglomerative
-agg = AgglomerativeClustering(
-    n_clusters=3,
-    linkage='ward'
-)
+scaler = StandardScaler()
 
-agg_labels = agg.fit_predict(X_scaled)
-
-dbi_agg = davies_bouldin_score(
-    X_scaled,
-    agg_labels
-)
-
-print("DBI KMeans :", dbi_kmeans)
-print("DBI Agglomerative :", dbi_agg)
-
-plt.figure(figsize=(6,4))
-
-plt.bar(
-    ["K-Means","Agglomerative"],
-    [dbi_kmeans, dbi_agg]
-)
-
-plt.ylabel("Davies-Bouldin Index")
-plt.title("Perbandingan Davies-Bouldin Index")
-
-plt.show()
+X_scaled = scaler.fit_transform(X)
+kmeans.fit_predict(X_scaled)
