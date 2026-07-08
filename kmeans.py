@@ -1,6 +1,7 @@
 # kmeans.py
 import io
 import streamlit as st
+import kmeans
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
