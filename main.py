@@ -105,7 +105,7 @@ with st.sidebar:
         }
     )
     st.markdown("---")
-    st.caption("🧠 Analisis data stunting, normal, dan overweight anak menggunakan metode clustering.")
+    st.caption("🧠 Analisis data stunting anak menggunakan metode clustering.")
 
 # -----------------------------
 # Routing to selected method
